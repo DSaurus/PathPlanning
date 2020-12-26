@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import math
 
 
 def config_parser():
@@ -54,15 +55,33 @@ if config.init:
 else:
     pts_plan = load_checkpoint(config.checkpoint)
 
-optim = torch.optim.Adam(pts_plan, lr=1e-1)
+optim = torch.optim.Adam(pts_plan, lr=1e-2)
 
-for _ in range(1):
+for _ in range(100):
     loss = 0
+    # data term
     for i in range(14):
         loss += torch.sum((pts_plan[i*7] - pts[plan[i]])**2)
-        # print(pts_plan[i*7], pts[plan[i]])
     loss += torch.sum((pts_plan[-1] - pts[plan[-1]])**2)
 
+    # angle term
+    angle_t = math.cos(0.2*math.acos(-1))
+    for i in range(7*14-2):
+        a = pts_plan[i+2] - pts_plan[i+1]
+        b = pts_plan[i+1] - pts_plan[i]
+        cos = torch.sum(a*b) / torch.sqrt(torch.sum(a*a) * torch.sum(b*b))
+        # linear
+        if cos > angle_t:
+            loss += -cos * 0.1
+        else:
+            loss += -cos * 10
+        # log
+        # if cos - angle_t > 1e-6:
+        #     loss += -torch.log( (cos - angle_t))
+        # else:
+        #     loss += -1e2 * (cos - angle_t)
+
+    # distance term
     for i in range(7*14-1):
         # loss += torch.mean( torch.abs((pts_plan[i+2] - pts_plan[i+1])**2 - (pts_plan[i+1] - pts_plan[i])**2))
         loss += torch.sum( (pts_plan[i+1] - pts_plan[i])**2)
