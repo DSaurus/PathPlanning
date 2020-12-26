@@ -1,0 +1,1 @@
+python plan.py --checkpoint test/checkpoint.txt
