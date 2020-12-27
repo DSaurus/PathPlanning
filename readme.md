@@ -1,11 +1,14 @@
 # Path Planning
 
+![](https://raw.githubusercontent.com/DSaurus/PathPlanning/master/vehicle.png)
+![](https://raw.githubusercontent.com/DSaurus/PathPlanning/master/result/route3/test.jpg)
+
 The planning requirements are as follows:
 
-- 1)	minimize the length of the planned path as much as possible;
-- 2)	vehicle must avoid all obstacles;
-- 3)	vehicle must clean all "rubbishes"
-- 4)	the turning angle of the vehicle should not be larger than 36 degree.
+- minimize the length of the planned path as much as possible;
+- vehicle must avoid all obstacles;
+- vehicle must clean all "rubbishes"
+- the turning angle of the vehicle should not be larger than 36 degree.
 
 ## Installation
 
