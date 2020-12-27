@@ -32,4 +32,7 @@ To run the optimization for path planning:
 sh run.sh
 ```
 
+## Result
+
+There are some results in the `result` folder, each folder contain two files. `checkpoint.txt` includes the optimized sample points and `test.jpg` visualizes the vehicle path.
 
