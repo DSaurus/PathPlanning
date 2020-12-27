@@ -31,9 +31,7 @@ bool dots_inline(torch::Tensor p1, torch::Tensor p2, torch::Tensor p3){
 bool intersect(torch::Tensor u1, torch::Tensor u2, torch::Tensor v1, torch::Tensor v2){
     if (parallel(u1, u2, v1, v2))
         return 0;
-    if ((! dots_inline(u1, u2, v1)) || (! dots_inline(u1, u2, v2)))
-        return (! same_side(u1, u2, v1, v2)) && (! same_side(v1, v2, u1, u2));
-    return dot_online_in(u1, v1, v2) || dot_online_in(u2, v1, v2) || dot_online_in(v1, u1, u2) || dot_online_in(v2, u1, u2);
+    return cross(u2, v1, u1)*cross(u2, v2, u1) < 0 && cross(v2, u1, v1)*cross(v2, u2, v1) < 0;
 }
 
 int check_seg(torch::Tensor pt1, torch::Tensor pt2, torch::Tensor& tri){
@@ -49,8 +47,8 @@ int check_seg(torch::Tensor pt1, torch::Tensor pt2, torch::Tensor& tri){
 }
 
 int calc_collision2(torch::Tensor pts1, torch::Tensor pts2, torch::Tensor pts3, torch::Tensor& tri){
-    torch::Tensor v1 = -(pts2 - pts1);
-    torch::Tensor v2 = -(pts3 - pts2);
+    torch::Tensor v1 = (pts2 - pts1);
+    torch::Tensor v2 = (pts3 - pts2);
     torch::Tensor vx = mynorm(mynorm(v1) + mynorm(v2));
     torch::Tensor vy = torch::zeros_like(vx);
     vy[0] = -vx[1];
@@ -82,9 +80,9 @@ int calc_collision2(torch::Tensor pts1, torch::Tensor pts2, torch::Tensor pts3, 
 at::Tensor calc_collision(torch::Tensor pts_plan, torch::Tensor tri){
     at::Tensor cost = at::zeros({7*14-2});
 #pragma omp parallel for num_threads(16) 
-    for(int i = 0; i < 7*14 - 2; i++){
+    for(int i = 0; i < 7*14-2; i++){
         int flag = calc_collision2(pts_plan[i], pts_plan[i+1], pts_plan[i+2], tri);
-        if(flag > 0){
+        if(flag >= 0){
             at::Tensor center = (tri[flag][0] + tri[flag][1] + tri[flag][2]) / 3;
             cost[i] = -1e2*at::sum( (pts_plan[i+1] - center)*(pts_plan[i+1] - center));
         }
@@ -92,6 +90,30 @@ at::Tensor calc_collision(torch::Tensor pts_plan, torch::Tensor tri){
     return cost;
 }
 
+at::Tensor check_in(torch::Tensor pts1, torch::Tensor pts2, torch::Tensor pts3, torch::Tensor data){
+    torch::Tensor v1 = -(pts2 - pts1);
+    torch::Tensor v2 = -(pts3 - pts2);
+    torch::Tensor vx = mynorm(mynorm(v1) + mynorm(v2));
+    torch::Tensor vy = torch::zeros_like(vx);
+    vy[0] = -vx[1];
+    vy[1] = vx[0];
+    double Y = 0.285;
+    double X = 0.35;
+    torch::Tensor pt1 = torch::zeros_like(vx), pt2 = torch::zeros_like(vy), pt3 = torch::zeros_like(vy), pt4 = torch::zeros_like(vy);
+
+    pt1[0] = pts2[0] + X*vx[0] + Y*vy[0]; pt1[1] = pts2[1] + X*vx[1] + Y*vy[1];
+    pt2[0] = pts2[0] - X*vx[0] + Y*vy[0]; pt2[1] = pts2[1] - X*vx[1] + Y*vy[1];
+    pt3[0] = pts2[0] - X*vx[0] - Y*vy[0]; pt3[1] = pts2[1] - X*vx[1] - Y*vy[1];
+    pt4[0] = pts2[0] + X*vx[0] - Y*vy[0]; pt4[1] = pts2[1] + X*vx[1] - Y*vy[1];
+    bool flag = cross(pt1, pt2, data) * cross(pt3, pt4, data) >= 0 && cross(pt2, pt3, data) * cross(pt4, pt1, data) >= 0;
+    if(flag){
+        return torch::zeros({1});
+    } else{
+        return 1e2*torch::sum((pts2 - data)*(pts2 - data));
+    }
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("calc_collision", &calc_collision, "calc_collision (CPU)");
+    m.def("check_in", &check_in, "check_in (CPU)");
 }

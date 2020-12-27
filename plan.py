@@ -11,6 +11,9 @@ def config_parser():
     parser.add_argument("--init", action='store_true')
     parser.add_argument("--workdir", type=str, default='test')
     parser.add_argument("--checkpoint", type=str, default='test')
+    parser.add_argument("--input", type=str, default='pts.txt')
+    parser.add_argument("--lr", type=float, default=1e-2)
+    parser.add_argument("--its", type=int, default=1000)
     return parser
 
 def load_data(filename):
@@ -57,12 +60,61 @@ def save_checkpoint(workdir, pts_plan):
 
 
 def draw(workdir, pts_plan, pts, tri):
-    x, y = [], []
-    for i in range(14):
-        x.append(pts[i][0])
-        y.append(pts[i][1])
-    plt.plot(x, y, 'g.')
 
+    pt2 = pts_plan[0]
+    pt3 = pts_plan[1]
+    vx = (pt3 - pt2) / torch.sqrt(torch.sum( (pt3-pt2)**2))
+    vy = torch.zeros_like(vx)
+    vy[0] = -vx[1]
+    vy[1] = vx[0]
+    Y = 0.285
+    X = 0.35
+    p1 = torch.zeros_like(vx)
+    p2 = torch.zeros_like(vx)
+    p3 = torch.zeros_like(vx)
+    p4 = torch.zeros_like(vx)
+
+    p1[0] = pt2[0] + X*vx[0] + Y*vy[0]
+    p1[1] = pt2[1] + X*vx[1] + Y*vy[1]
+    p2[0] = pt2[0] - X*vx[0] + Y*vy[0]
+    p2[1] = pt2[1] - X*vx[1] + Y*vy[1]
+    p3[0] = pt2[0] - X*vx[0] - Y*vy[0]
+    p3[1] = pt2[1] - X*vx[1] - Y*vy[1]
+    p4[0] = pt2[0] + X*vx[0] - Y*vy[0]
+    p4[1] = pt2[1] + X*vx[1] - Y*vy[1]
+    xx = [p1[0], p2[0], p3[0], p4[0], p1[0]]
+    yy = [p1[1], p2[1], p3[1], p4[1], p1[1]]
+    plt.plot(xx, yy, 'b-')
+
+    for i in range(7*14-2):
+        pt1 = pts_plan[i]
+        pt2 = pts_plan[i+1]
+        pt3 = pts_plan[i+2]
+        v1 = (pt2 - pt1) / torch.sqrt(torch.sum( (pt2-pt1)**2))
+        v2 = (pt3 - pt2) / torch.sqrt(torch.sum( (pt3-pt2)**2))
+        vx = (v1 + v2) / torch.sqrt(torch.sum( (v1 + v2)**2))
+        vy = torch.zeros_like(vx)
+        vy[0] = -vx[1]
+        vy[1] = vx[0]
+        Y = 0.285
+        X = 0.35
+        p1 = torch.zeros_like(vx)
+        p2 = torch.zeros_like(vx)
+        p3 = torch.zeros_like(vx)
+        p4 = torch.zeros_like(vx)
+
+        p1[0] = pt2[0] + X*vx[0] + Y*vy[0]
+        p1[1] = pt2[1] + X*vx[1] + Y*vy[1]
+        p2[0] = pt2[0] - X*vx[0] + Y*vy[0]
+        p2[1] = pt2[1] - X*vx[1] + Y*vy[1]
+        p3[0] = pt2[0] - X*vx[0] - Y*vy[0]
+        p3[1] = pt2[1] - X*vx[1] - Y*vy[1]
+        p4[0] = pt2[0] + X*vx[0] - Y*vy[0]
+        p4[1] = pt2[1] + X*vx[1] - Y*vy[1]
+        xx = [p1[0], p2[0], p3[0], p4[0], p1[0]]
+        yy = [p1[1], p2[1], p3[1], p4[1], p1[1]]
+        plt.plot(xx, yy, 'b-')
+    
     x = []
     y = []
     for i in range(7*14):
@@ -81,6 +133,11 @@ def draw(workdir, pts_plan, pts, tri):
         print(x, y)
         plt.plot(x, y, 'r-')
     
+    x, y = [], []
+    for i in range(14):
+        x.append(pts[i][0])
+        y.append(pts[i][1])
+    plt.plot(x, y, 'g.', ms=10)
     plt.savefig(os.path.join(workdir, 'test.jpg'))
 
 
@@ -89,7 +146,7 @@ config = parser.parse_args()
 workdir = config.workdir
 os.makedirs(workdir, exist_ok=True)
 
-pts, plan, tri = load_data('pts.txt')
+pts, plan, tri = load_data(config.input)
 
 if config.init:
     pts_plan = []
@@ -98,43 +155,48 @@ if config.init:
 else:
     pts_plan = load_checkpoint(config.checkpoint)
 
-optim = torch.optim.Adam(pts_plan, lr=1e-2)
+optim = torch.optim.Adam(pts_plan, lr=config.lr)
+its = config.its
 
-for _ in range(100):
+import time
+t = time.time()
+for _ in range(its):
     loss = 0
     # data term
-    for i in range(14):
-        loss += check_in(pts_plan[i*7-1], pts_plan[i*7], pts_plan[i*7+1], pts[plan[i]])
-        # loss += torch.sum((pts_plan[i*7] - pts[plan[i]])**2)
-    loss += torch.sum((pts_plan[-1] - pts[plan[-1]])**2)
-    loss += check_in()
+    if config.init:
+        for i in range(14):
+            loss += torch.sum((pts_plan[i*7] - pts[plan[i]])**2) * 1e2
+        loss += torch.sum((pts_plan[-1] - pts[plan[-1]])**2) * 1e2
+    
 
     # angle term
-    angle_t = math.cos(0.2*math.acos(-1))
-    for i in range(7*14-2):
-        a = pts_plan[i+2] - pts_plan[i+1]
-        b = pts_plan[i+1] - pts_plan[i]
-        cos = torch.sum(a*b) / torch.sqrt(torch.sum(a*a) * torch.sum(b*b))
-        # linear
-        if cos > angle_t:
-            loss += -cos * 0.1
-        else:
-            loss += -cos * 10
-        # log
-        # if cos - angle_t > 1e-6:
-        #     loss += -torch.log( (cos - angle_t))
-        # else:
-        #     loss += -1e2 * (cos - angle_t)
+    if not config.init:
+        for i in range(14):
+            loss += torch.sum(check_in(pts_plan[i*7-1], pts_plan[i*7], pts_plan[i*7+1], pts[plan[i]]))
+        loss += torch.sum(check_in(pts_plan[-3], pts_plan[-2], pts_plan[-1], pts[plan[-1]]))
+        angle_t = math.cos(0.2*math.acos(-1))
+        for i in range(7*14-2):
+            a = pts_plan[i+2] - pts_plan[i+1]
+            b = pts_plan[i+1] - pts_plan[i]
+            cos = torch.sum(a*b) / torch.sqrt(torch.sum(a*a) * torch.sum(b*b))
+            # linear
+            if cos > angle_t:
+                loss += 0
+            else:
+                loss += -cos * 10
+            # log
+            # if cos - angle_t > 1e-6:
+            #     loss += -torch.log( (cos - angle_t))
+            # else:
+            #     loss += -1e2 * (cos - angle_t)
 
-    # collision term
-    collision = calc_collision(torch.cat(pts_plan, dim=0).reshape(-1, 2), torch.FloatTensor(tri))
-    print(collision)
-    loss += torch.sum(collision)
+        # collision term
+        collision = calc_collision(torch.cat(pts_plan, dim=0).reshape(-1, 2), torch.FloatTensor(tri))
+        loss += torch.sum(collision)
     
     # distance term
     ans = 0
     for i in range(7*14-1):
-        # loss += torch.mean( torch.abs((pts_plan[i+2] - pts_plan[i+1])**2 - (pts_plan[i+1] - pts_plan[i])**2))
         loss += torch.sum( (pts_plan[i+1] - pts_plan[i])**2)
         ans += torch.sqrt(torch.sum( (pts_plan[i+1] - pts_plan[i])**2))
     optim.zero_grad()
@@ -144,6 +206,7 @@ for _ in range(100):
 
 save_checkpoint(workdir, pts_plan)
 draw(workdir, pts_plan, pts, tri)
+print(time.time() - t)
 
 
 
